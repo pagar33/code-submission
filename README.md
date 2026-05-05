@@ -7,8 +7,8 @@
 ```
 .
 ├── config.py                          # all paths, model configs, hyperparameters
-├── requirements.txt
 ├── pyproject.toml
+├── requirements.txt
 │
 ├── pipeline/
 │   ├── a1_download_data.py            # download corpus + model weights
@@ -29,20 +29,18 @@
 │   ├── c2d_dedup_concepts.py          # deduplicate concept atlas
 │   ├── c3_build_vectors.py            # project concepts → per-model vectors
 │   │
-│   ├── d1_evaluate_native.py          # evaluate native (per-model) steering
-│   └── d2_evaluate_universal.py       # evaluate universal steering transfer
-│
-├── features/                          # SAE feature label JSONs (in git)
+│   └── d1_evaluate_native.py          # evaluate steering (native + universal)
 │
 ├── activations/                       # ← download from HF (see below)
 ├── alignment/                         # ← download from HF
 ├── data/                              # ← download from HF
+├── features/                          # SAE feature label JSONs (in git)
+├── logs/
 ├── model/                             # ← download from HF
+├── results/
 ├── saes/                              # ← download from HF
 ├── steering/                          # ← download from HF
-├── universal/                         # ← download from HF
-├── results/
-└── logs/
+└── universal/                         # ← download from HF
 ```
 
 ---
@@ -107,5 +105,4 @@ python pipeline/c3_build_vectors.py
 
 # D-track: evaluation
 python pipeline/d1_evaluate_native.py
-python pipeline/d2_evaluate_universal.py
 ```
