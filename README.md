@@ -6,10 +6,13 @@
 
 ```
 .
+├── activations/                       # ← download from HF (see below)
+├── alignment/                         # ← download from HF
 ├── config.py                          # all paths, model configs, hyperparameters
-├── pyproject.toml
-├── requirements.txt
-│
+├── data/                              # ← download from HF
+├── features/                          # SAE feature label JSONs (in git)
+├── logs/
+├── model/                             # ← download from HF
 ├── pipeline/
 │   ├── a1_download_data.py            # download corpus + model weights
 │   ├── a2_extract_activations.py      # extract residual-stream activations
@@ -31,12 +34,8 @@
 │   │
 │   └── d1_evaluate_native.py          # evaluate steering (native + universal)
 │
-├── activations/                       # ← download from HF (see below)
-├── alignment/                         # ← download from HF
-├── data/                              # ← download from HF
-├── features/                          # SAE feature label JSONs (in git)
-├── logs/
-├── model/                             # ← download from HF
+├── pyproject.toml
+├── requirements.txt
 ├── results/
 ├── saes/                              # ← download from HF
 ├── steering/                          # ← download from HF
