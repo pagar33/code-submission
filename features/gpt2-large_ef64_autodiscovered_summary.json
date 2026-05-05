@@ -1,0 +1,14 @@
+{
+  "model": "gpt2-large",
+  "ef": 64,
+  "n_passages": 10000,
+  "n_features_total": 81920,
+  "n_features_active": 2765,
+  "n_clusters": 48,
+  "min_var": 0.01,
+  "min_cluster": 5,
+  "merge_thresh": 0.85,
+  "llm": "anthropic/claude-sonnet-4-6",
+  "elapsed_s": 44.4,
+  "output": "/home/jovyan/steering-v2-a100/universal_steering/features/gpt2-large_ef64_autodiscovered.json"
+}

@@ -1,0 +1,36 @@
+# Credentials
+.env
+
+# Large asset directories — download from Hugging Face instead (see README)
+activations/
+alignment/*.pt
+alignment/pair_checkpoints/
+data/
+model/
+saes/
+steering/*.pt
+universal/*.pt
+
+# Keep feature label JSONs and .gitkeep placeholders
+!features/
+!features/**
+!*/**.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv*/
+
+# Logs
+*.log
+run_log.jsonl
+logs/
+
+# Editor
+.DS_Store
+.idea/
+.vscode/

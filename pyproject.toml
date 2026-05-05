@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "concept-universality"
+version = "0.1.0"
+description = "Replication code for 'Universal Concept Representations Across Language Models'"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "transformers>=4.38",
+    "datasets",
+    "huggingface_hub",
+    "h5py",
+    "numpy",
+    "scikit-learn",
+    "tqdm",
+    "wandb",
+    "python-dotenv",
+    "openai",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "isort"]
+
+[project.scripts]
+# A-track: per-model pipeline
+a1-download      = "pipeline.a1_download_data:main"
+a2-extract       = "pipeline.a2_extract_activations:main"
+a3-train-sae     = "pipeline.a3_train_sae:main"
+a4-normalise     = "pipeline.a4_normalise_activations:main"
+a4b-label        = "pipeline.a4b_label_features:main"
+a5-build-steering = "pipeline.a5_build_steering:main"
+
+# B-track: cross-model alignment
+b1-align         = "pipeline.b1_align_features:main"
+b2-validate      = "pipeline.b2_validate_alignment:main"
+
+# C-track: universal concept discovery
+c1-global-mlp    = "pipeline.c1_train_global_mlp:main"
+c2-discover      = "pipeline.c2_discover_concepts:main"
+c2b-auto-discover = "pipeline.c2b_auto_discover:main"
+c2c-label        = "pipeline.c2c_label_concepts:main"
+c2d-dedup        = "pipeline.c2d_dedup_concepts:main"
+c3-build-vectors = "pipeline.c3_build_vectors:main"
+
+# D-track: evaluation
+d1-eval-native   = "pipeline.d1_evaluate_native:main"
+d2-eval-universal = "pipeline.d2_evaluate_universal:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipeline*"]
