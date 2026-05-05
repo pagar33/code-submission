@@ -34,8 +34,9 @@ a4b-label        = "pipeline.a4b_label_features:main"
 a5-build-steering = "pipeline.a5_build_steering:main"
 
 # B-track: cross-model alignment
-b1-align         = "pipeline.b1_align_features:main"
-b2-validate      = "pipeline.b2_validate_alignment:main"
+b1-align              = "pipeline.b1_align_features:main"
+b2-validate           = "pipeline.b2_validate_alignment:main"
+b3-build-cross        = "pipeline.b3_build_cross_steering:main_cross"
 
 # C-track: universal concept discovery
 c1-global-mlp    = "pipeline.c1_train_global_mlp:main"

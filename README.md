@@ -1,103 +1,111 @@
 # Universal Concept Representations Across Language Models
 
-Replication code for the NeurIPS 2026 submission.
-
 ---
 
-## Overview
+## Repository layout
 
-This repository contains the full pipeline for discovering and transferring **universal concept representations** — steering vectors that generalise across model families without model-specific fine-tuning.
-
-The pipeline is organised into four tracks:
-
-| Track | Stage | Script | Description |
-|-------|-------|--------|-------------|
-| **A** | A1 | `pipeline/a1_download_data.py` | Download corpus and model weights |
-| | A2 | `pipeline/a2_extract_activations.py` | Extract residual-stream activations |
-| | A3 | `pipeline/a3_train_sae.py` | Train sparse autoencoder per model |
-| | A4 | `pipeline/a4_normalise_activations.py` | Normalise activations across domains |
-| | A4b | `pipeline/a4b_label_features.py` | Label SAE features via LLM |
-| | A5 | `pipeline/a5_build_steering.py` | Build per-model steering vectors |
-| **B** | B1 | `pipeline/b1_align_features.py` | Learn cross-model MLP alignment bridges |
-| | B2 | `pipeline/b2_validate_alignment.py` | Validate alignment quality |
-| **C** | C1 | `pipeline/c1_train_global_mlp.py` | Train global concept MLP |
-| | C2 | `pipeline/c2_discover_concepts.py` | Discover universal concept clusters |
-| | C2b | `pipeline/c2b_auto_discover.py` | Auto-discover concept axes |
-| | C2c | `pipeline/c2c_label_concepts.py` | Label universal concepts via LLM |
-| | C2d | `pipeline/c2d_dedup_concepts.py` | Deduplicate concept atlas |
-| | C3 | `pipeline/c3_build_vectors.py` | Project concepts → per-model vectors |
-| **D** | D1 | `pipeline/d1_evaluate_native.py` | Evaluate native (per-model) steering |
-| | D2 | `pipeline/d2_evaluate_universal.py` | Evaluate universal steering transfer |
+```
+.
+├── config.py                          # all paths, model configs, hyperparameters
+├── requirements.txt
+├── pyproject.toml
+│
+├── pipeline/
+│   ├── a1_download_data.py            # download corpus + model weights
+│   ├── a2_extract_activations.py      # extract residual-stream activations
+│   ├── a3_train_sae.py                # train sparse autoencoder per model
+│   ├── a4_normalise_activations.py    # normalise activations across domains
+│   ├── a4b_label_features.py          # label SAE features via LLM
+│   ├── a5_build_steering.py           # build per-model (native) steering vectors
+│   │
+│   ├── b1_align_features.py           # learn cross-model MLP alignment bridges
+│   ├── b2_validate_alignment.py       # validate alignment quality
+│   ├── b3_build_cross_steering.py     # build cross-model steering vectors
+│   │
+│   ├── c1_train_global_mlp.py         # train global concept MLP
+│   ├── c2_discover_concepts.py        # discover universal concept clusters
+│   ├── c2b_auto_discover.py           # auto-discover concept axes
+│   ├── c2c_label_concepts.py          # label universal concepts via LLM
+│   ├── c2d_dedup_concepts.py          # deduplicate concept atlas
+│   ├── c3_build_vectors.py            # project concepts → per-model vectors
+│   │
+│   ├── d1_evaluate_native.py          # evaluate native (per-model) steering
+│   └── d2_evaluate_universal.py       # evaluate universal steering transfer
+│
+├── features/                          # SAE feature label JSONs (in git)
+│
+├── activations/                       # ← download from HF (see below)
+├── alignment/                         # ← download from HF
+├── data/                              # ← download from HF
+├── model/                             # ← download from HF
+├── saes/                              # ← download from HF
+├── steering/                          # ← download from HF
+├── universal/                         # ← download from HF
+├── results/
+└── logs/
+```
 
 ---
 
 ## Setup
 
 ```bash
-# 1. Clone the repo
-git clone <repo_url> && cd concept-universality
-
-# 2. Create environment
+git clone https://github.com/pagar33/code-submission.git && cd code-submission
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
-
-# 3. Set credentials
-cp .env.example .env
-# Edit .env: add your HF_TOKEN and WANDB_API_KEY
+cp .env.example .env          # add HF_TOKEN and WANDB_API_KEY
 ```
 
 ---
 
-## Asset Directories
+## Downloading assets from Hugging Face
 
-Large binary assets are **not stored in git**. Download them from our Hugging Face dataset repo:
+Large binary assets (activations, SAE checkpoints, alignment bridges, steering vectors, corpus) are hosted on Hugging Face and **not stored in git**.
 
 ```bash
-python pipeline/a1_download_data.py   # downloads corpus → data/
-# Model weights and SAE checkpoints are downloaded automatically by each script
+python pipeline/a1_download_data.py
 ```
 
-The directory layout mirrors the structure described in the paper:
-
-```
-activations/   # per-model, per-domain activation h5 files
-alignment/     # MLP bridge checkpoints (.pt) and aligned pair metadata
-data/          # raw corpus (corpus.jsonl, ~2 GB)
-features/      # SAE feature label JSONs (in git)
-logs/          # run logs
-model/         # LLM weights (downloaded from HF)
-results/       # evaluation outputs
-saes/          # trained SAE checkpoints
-steering/      # per-model and universal steering vectors
-universal/     # global MLP and concept atlas
-```
-
----
-
-## Configuration
-
-All paths, model names, and hyperparameters are in `config.py`. Override any value via environment variables (see `.env.example`) or by editing the file directly.
+This populates `data/`, `model/`, `saes/`, `activations/`, `alignment/`, `steering/`, and `universal/` from the dataset repo specified in `config.py`.
 
 ---
 
 ## Models
 
-Experiments use the following five models (auto-downloaded via `huggingface_hub`):
-
-- GPT-2 (124M)
-- GPT-2-Large (774M)
-- LLaMA-3-8B
-- Mistral-7B-v0.3
-- DeepSeek-LLM-7B
+| Key in `config.py` | HuggingFace ID | Hidden dim |
+|--------------------|----------------|------------|
+| `gpt2-large` | `gpt2-large` | 1280 |
+| `gemma` | `google/gemma-2-2b` | 2304 |
+| `llama` | `NousResearch/Hermes-3-Llama-3.1-8B` | 4096 |
+| `mistral` | `mistralai/Mistral-7B-v0.3` | 4096 |
+| `deepseek-llm-7b` | `deepseek-ai/deepseek-llm-7b-base` | 4096 |
 
 ---
 
-## Citation
+## Running the pipeline
 
-```bibtex
-@inproceedings{anonymous2026universal,
-  title     = {Universal Concept Representations Across Language Models},
-  booktitle = {Advances in Neural Information Processing Systems},
-  year      = {2026},
-}
+Run scripts in stage order. Each script reads paths and hyperparameters from `config.py`.
+
+```bash
+# A-track: per-model
+python pipeline/a1_download_data.py
+python pipeline/a2_extract_activations.py --model gpt2-large
+python pipeline/a3_train_sae.py           --model gpt2-large
+python pipeline/a4_normalise_activations.py --model gpt2-large
+python pipeline/a4b_label_features.py     --model gpt2-large
+python pipeline/a5_build_steering.py      --model gpt2-large
+
+# B-track: cross-model alignment
+python pipeline/b1_align_features.py --model-a gpt2-large --model-b llama
+python pipeline/b2_validate_alignment.py
+python pipeline/b3_build_cross_steering.py --guide-model gpt2-large --target-model llama
+
+# C-track: universal concept discovery
+python pipeline/c1_train_global_mlp.py
+python pipeline/c2_discover_concepts.py
+python pipeline/c3_build_vectors.py
+
+# D-track: evaluation
+python pipeline/d1_evaluate_native.py
+python pipeline/d2_evaluate_universal.py
 ```
