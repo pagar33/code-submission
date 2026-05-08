@@ -79,14 +79,6 @@ MODELS = {
     },
 }
 
-# --- L4 GPU memory management ---
-# CRITICAL: only one GPU model loaded at a time. Between Gemma and Llama jobs:
-#   del model
-#   torch.cuda.empty_cache()
-#   import gc; gc.collect()
-# Also set this env var before loading Gemma:
-#   os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
-
 # --- SAE settings ---
 SAE_EXPANSION_FACTOR = 16        # hidden_dim * 16 = number of features
 # TopK is now per-model — use MODELS[model]["sae_topk"]
@@ -94,45 +86,108 @@ SAE_BATCH_SIZE = 4096
 SAE_LR = 1e-4
 # NOTE: train steps are per-model — use MODELS[model]["sae_train_steps"]
 
-# --- Dataset sources — verified row counts from HuggingFace ---
-# All freely available, no license approval needed
+# --- Dataset sources — all freely available on HuggingFace ---
+# Production corpus: 394,508 passages across 17 domain-diverse datasets.
+# Each entry specifies how to obtain and process text from the source dataset.
+# Fields:
+#   hf_path / hf_config / split / n (0 = all rows)
+#   text_mode: "single" (one field) or "concat" (join two fields with sep)
+#   text_field: field name (single) or [field1, field2] (concat)
+#   sep: separator for concat mode
+#   min_tok / max_tok: approximate token-count filter (word-count proxy)
+#   strip_html, remove_urls, preserve_code: text-cleaning flags
+#   strip_regex: regex to remove from text before filtering
 DATASET_SOURCES = {
-    "sst2": {
-        "hf_path": "nyu-mll/glue", "config": "sst2",
-        "split": "train",        # MUST be train (67,349 rows). validation only has 872.
-        "text_field": "sentence", "label_field": "label",
-        "n": 5000,
-        "hf_url": "https://huggingface.co/datasets/nyu-mll/glue"
+    "code_python_50k": {
+        "hf_path": "codeparrot/codeparrot-clean", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "content",
+        "min_tok": 20, "max_tok": 512, "preserve_code": True,
     },
-    "yelp": {
-        "hf_path": "fancyzhx/yelp_polarity", "config": None,
-        "split": "train",        # 560,000 rows
-        "text_field": "text", "label_field": "label",
-        "n": 3000,
-        "hf_url": "https://huggingface.co/datasets/fancyzhx/yelp_polarity"
+    "code_python_instructions_15k": {
+        "hf_path": "iamtarun/python_code_instructions_18k_alpaca", "hf_config": None, "split": "train",
+        "n": 15_000, "text_mode": "single", "text_field": "output",
+        "min_tok": 20, "max_tok": 512, "preserve_code": True,
     },
-    "truthfulqa": {
-        "hf_path": "truthfulqa/truthful_qa", "config": "generation",
-        "split": "validation",   # ONLY split available — 817 rows total, use ALL
-        "text_field": "question", "label_field": "correct_answers",
-        "n": 817,                # use every single row
-        "hf_url": "https://huggingface.co/datasets/truthfulqa/truthful_qa"
+    "code_python_snippets_5k": {
+        "hf_path": "flytech/python-codes-25k", "hf_config": None, "split": "train",
+        "n": 5_000, "text_mode": "single", "text_field": "output",
+        "min_tok": 20, "max_tok": 512, "preserve_code": True,
     },
-    "formality": {
-        "hf_path": "osyvokon/pavlick-formality-scores", "config": None,
-        "split": "train",        # 9,270 rows — sample from this
-        "text_field": "sentence", "label_field": "avg_score",
-        # Score range: -3.0 to +3.0 (NOT 1-7)
-        # Binarize: formality=1 if avg_score >= 1.0, formality=0 if avg_score <= -1.0
-        # Skip rows with -1.0 < avg_score < 1.0
-        "n": 1183,
-        "hf_url": "https://huggingface.co/datasets/osyvokon/pavlick-formality-scores"
+    "code_sql_50k": {
+        "hf_path": "b-mc2/sql-create-context", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "concat", "text_field": ["question", "answer"], "sep": "\n",
+        "min_tok": 20, "max_tok": 512, "preserve_code": True,
+    },
+    "math_gsm8k_8k": {
+        "hf_path": "openai/gsm8k", "hf_config": "main", "split": "train",
+        "n": 0, "text_mode": "concat", "text_field": ["question", "answer"], "sep": "\n",
+        "strip_regex": r"\n?#+.*$",
+        "min_tok": 20, "max_tok": 512,
+    },
+    "math_metamath_50k": {
+        "hf_path": "meta-math/MetaMathQA", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "concat", "text_field": ["query", "response"], "sep": "\n",
+        "min_tok": 20, "max_tok": 512,
+    },
+    "math_tiger_50k": {
+        "hf_path": "TIGER-Lab/MATH-plus", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "concat", "text_field": ["problem", "solution"], "sep": "\n",
+        "min_tok": 20, "max_tok": 512,
+    },
+    "math_numina_50k": {
+        "hf_path": "AI-MO/NuminaMath-CoT", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "concat", "text_field": ["problem", "solution"], "sep": "\n",
+        "min_tok": 20, "max_tok": 512,
+    },
+    "sentiment_yelp_50k": {
+        "hf_path": "fancyzhx/yelp_polarity", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "text",
+        "min_tok": 20, "max_tok": 512, "strip_html": True, "remove_urls": True,
+    },
+    "creative_writing_50k": {
+        "hf_path": "euclaise/writingprompts", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "story",
+        "min_tok": 20, "max_tok": 512, "remove_urls": True,
+    },
+    "academic_arxiv_50k": {
+        "hf_path": "ccdv/arxiv-summarization", "hf_config": "document", "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "abstract",
+        "min_tok": 20, "max_tok": 512, "remove_urls": True,
+    },
+    "science_pubmed_50k": {
+        "hf_path": "qiaojin/PubMedQA", "hf_config": "pqa_unlabeled", "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "long_answer",
+        "min_tok": 20, "max_tok": 512, "remove_urls": True,
+    },
+    "legal_freelaw_50k": {
+        "hf_path": "pile-of-law/pile-of-law", "hf_config": "freelaw", "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "text",
+        "min_tok": 20, "max_tok": 512, "strip_html": True, "remove_urls": True,
+    },
+    "news_ccnews_50k": {
+        "hf_path": "cc_news", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "text",
+        "min_tok": 20, "max_tok": 512, "strip_html": True, "remove_urls": True,
+    },
+    "qa_squad_50k": {
+        "hf_path": "rajpurkar/squad", "hf_config": None, "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "context",
+        "min_tok": 20, "max_tok": 512, "remove_urls": True,
+    },
+    "prose_openwebtext_50k": {
+        "hf_path": "Skylion007/openwebtext", "hf_config": "plain_text", "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "text",
+        "min_tok": 20, "max_tok": 512, "strip_html": True, "remove_urls": True,
+    },
+    "prose_wikipedia_50k": {
+        "hf_path": "wikimedia/wikipedia", "hf_config": "20231101.en", "split": "train",
+        "n": 50_000, "text_mode": "single", "text_field": "text",
+        "min_tok": 20, "max_tok": 512, "strip_html": True, "remove_urls": True,
     },
 }
-# Total: 5000 + 3000 + 817 + 1183 = 10,000 exactly
 
-N_PASSAGES = 10_000
-MAX_SEQ_LEN = 256  # increased from 128 — needed to capture full code function bodies
+N_PASSAGES = 394_508   # total passages after min/max token filtering
+MAX_SEQ_LEN = 512      # max tokens per passage for activation extraction
 
 # --- Alignment ---
 ALIGNMENT_CONFIDENCE_THRESHOLD = 0.7
@@ -154,7 +209,7 @@ RESULTS_DIR = str(_CONFIG_DIR / "results")
 
 # --- HuggingFace hub (for data/checkpoint storage — all large files live here) ---
 # Code lives on GitHub. Data, activations, SAEs, results live on HF Hub.
-HF_REPO_ID = "YOUR_HF_USERNAME/universal-steering-data"  # CHANGE THIS — private dataset repo
+HF_REPO_ID = "nips348734/submission-artifacts"
 HF_TOKEN = os.environ.get("HF_TOKEN", "")  # set in .env file, never hardcode
 
 # Polarity corrections for cross-model transfer

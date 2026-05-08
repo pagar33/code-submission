@@ -5,15 +5,13 @@ _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))                    # pipeline/ (for sibling scripts)
 
 import argparse
+import html
 import json
 import os
-import random
 import re
+import shutil
 import time
-import html
 from typing import List, Dict
-
-from datasets import load_dataset
 
 import config
 
@@ -31,96 +29,125 @@ def log_run(script: str, start_time: float, status: str, error: str = ""):
         f.write(json.dumps(entry) + "\n")
 
 
-def clean_text(text: str) -> str:
+# ---------------------------------------------------------------------------
+# Text cleaning helpers
+# ---------------------------------------------------------------------------
+
+def _strip_html(text: str) -> str:
     text = html.unescape(text)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def sample_dataset(ds, n: int, seed: int) -> List[Dict]:
-    if len(ds) <= n:
-        return list(ds)
-    ds = ds.shuffle(seed=seed)
-    return list(ds.select(range(n)))
+def _remove_urls(text: str) -> str:
+    return re.sub(r"https?://\S+|www\.\S+", " ", text)
 
 
-def main():
-    start_time = time.time()
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--force", action="store_true")
-    args = parser.parse_args()
+def _normalise_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
-    os.makedirs(config.DATA_DIR, exist_ok=True)
-    corpus_path = os.path.join(config.DATA_DIR, "corpus.jsonl")
-    labels_path = os.path.join(config.DATA_DIR, "corpus_labels.jsonl")
 
-    if (os.path.exists(corpus_path) or os.path.exists(labels_path)) and not args.force:
-        print("Data files already exist. Use --force to regenerate.")
-        log_run("step1_download_data.py", start_time, "skipped")
-        return 0
+def _clean(text: str, cfg: dict) -> str:
+    if cfg.get("strip_html"):
+        text = _strip_html(text)
+    if cfg.get("remove_urls"):
+        text = _remove_urls(text)
+    strip_regex = cfg.get("strip_regex")
+    if strip_regex:
+        text = re.sub(strip_regex, "", text, flags=re.MULTILINE)
+    if not cfg.get("preserve_code"):
+        text = _normalise_whitespace(text)
+    else:
+        text = text.strip()
+    return text
 
-    rng = random.Random(42)
 
-    records = []
-    labels = []
+def _approx_tokens(text: str) -> int:
+    """Word-count proxy for token length (fast; ~0.75 tokens/word ratio is fine for filtering)."""
+    return len(text.split())
 
-    # SST-2
-    sst2_cfg = config.DATASET_SOURCES["sst2"]
-    sst2 = load_dataset(sst2_cfg["hf_path"], sst2_cfg["config"], split=sst2_cfg["split"])
-    sst2_samples = sample_dataset(sst2, sst2_cfg["n"], 42)
-    for row in sst2_samples:
-        text = clean_text(row[sst2_cfg["text_field"]])
-        records.append({"source": "sst2", "text": text})
-        labels.append({"source": "sst2", "sentiment": int(row[sst2_cfg["label_field"]]), "formality": None, "factuality": None})
 
-    # Yelp
-    yelp_cfg = config.DATASET_SOURCES["yelp"]
-    yelp = load_dataset(yelp_cfg["hf_path"], split=yelp_cfg["split"])
-    yelp_samples = sample_dataset(yelp, yelp_cfg["n"], 42)
-    for row in yelp_samples:
-        text = clean_text(row[yelp_cfg["text_field"]])
-        records.append({"source": "yelp", "text": text})
-        labels.append({"source": "yelp", "sentiment": int(row[yelp_cfg["label_field"]]), "formality": None, "factuality": None})
+# ---------------------------------------------------------------------------
+# Download prebuilt corpus from HuggingFace artifacts repo (primary path)
+# ---------------------------------------------------------------------------
 
-    # TruthfulQA
-    tq_cfg = config.DATASET_SOURCES["truthfulqa"]
-    truthful = load_dataset(tq_cfg["hf_path"], tq_cfg["config"], split=tq_cfg["split"])
-    for row in truthful:
-        text = clean_text(row[tq_cfg["text_field"]])
-        correct = row[tq_cfg["label_field"]]
-        factuality = 1 if correct and len(correct) > 0 else 0
-        records.append({"source": "truthfulqa", "text": text})
-        labels.append({"source": "truthfulqa", "sentiment": None, "formality": None, "factuality": factuality})
+def _download_from_hub(corpus_path: str, labels_path: str) -> int:
+    """Pull corpus.jsonl and corpus_labels.jsonl from nips348734/submission-artifacts."""
+    from huggingface_hub import hf_hub_download
 
-    # Formality
-    fm_cfg = config.DATASET_SOURCES["formality"]
-    formality = load_dataset(fm_cfg["hf_path"], split=fm_cfg["split"])
-    filtered = []
-    for row in formality:
-        score = float(row[fm_cfg["label_field"]])
-        if score >= 1.0:
-            lbl = 1
-        elif score <= -1.0:
-            lbl = 0
-        else:
-            continue
-        filtered.append((row, lbl))
+    repo_id = config.HF_REPO_ID
+    print(f"Downloading corpus from {repo_id} ...")
 
-    rng.shuffle(filtered)
-    filtered = filtered[: fm_cfg["n"]]
-    for row, lbl in filtered:
-        text = clean_text(row[fm_cfg["text_field"]])
-        records.append({"source": "formality", "text": text})
-        labels.append({"source": "formality", "sentiment": None, "formality": int(lbl), "factuality": None})
+    for fname, dest in [("data/corpus.jsonl", corpus_path),
+                        ("data/corpus_labels.jsonl", labels_path)]:
+        local = hf_hub_download(
+            repo_id=repo_id,
+            filename=fname,
+            repo_type="dataset",
+            token=config.HF_TOKEN or None,
+        )
+        shutil.copy(local, dest)
+        print(f"  Saved {fname} -> {dest}")
 
-    if len(records) != config.N_PASSAGES:
-        raise ValueError(f"Expected {config.N_PASSAGES} records, got {len(records)}")
+    with open(corpus_path, encoding="utf-8") as f:
+        n = sum(1 for _ in f)
+    return n
 
-    # Assign IDs
-    for i in range(len(records)):
-        records[i]["id"] = i
-        labels[i]["id"] = i
+
+# ---------------------------------------------------------------------------
+# Rebuild corpus from source datasets (fallback / --rebuild path)
+# ---------------------------------------------------------------------------
+
+def _rebuild_corpus(corpus_path: str, labels_path: str) -> int:
+    """Re-download and process all 17 DATASET_SOURCES entries."""
+    from datasets import load_dataset
+
+    records: List[Dict] = []
+    labels: List[Dict] = []
+    global_id = 0
+
+    for source_tag, cfg in config.DATASET_SOURCES.items():
+        print(f"  Loading {source_tag} ...")
+
+        hf_config = cfg.get("hf_config")
+        ds = load_dataset(
+            cfg["hf_path"],
+            hf_config,
+            split=cfg["split"],
+            trust_remote_code=True,
+        )
+
+        n = cfg.get("n", 0)
+        if n and n < len(ds):
+            ds = ds.shuffle(seed=42).select(range(n))
+
+        min_tok = cfg.get("min_tok", 1)
+        max_tok = cfg.get("max_tok", 512)
+        text_mode = cfg.get("text_mode", "single")
+        text_field = cfg["text_field"]
+        sep = cfg.get("sep", "\n")
+
+        accepted = 0
+        for row in ds:
+            if text_mode == "concat":
+                raw = row[text_field[0]] + sep + row[text_field[1]]
+            else:
+                raw = row[text_field]
+
+            if not isinstance(raw, str):
+                raw = str(raw) if raw is not None else ""
+
+            text = _clean(raw, cfg)
+            tok_len = _approx_tokens(text)
+            if tok_len < min_tok or tok_len > max_tok:
+                continue
+
+            records.append({"id": global_id, "source": source_tag, "text": text})
+            labels.append({"id": global_id, "source": source_tag})
+            global_id += 1
+            accepted += 1
+
+        print(f"    {accepted} passages accepted from {source_tag}")
 
     with open(corpus_path, "w", encoding="utf-8") as f:
         for r in records:
@@ -130,10 +157,46 @@ def main():
         for r in labels:
             f.write(json.dumps(r) + "\n")
 
-    print(f"Wrote {len(records)} records to {corpus_path}")
-    print(f"Wrote {len(labels)} labels to {labels_path}")
+    return len(records)
 
-    log_run("step1_download_data.py", start_time, "success")
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    start_time = time.time()
+    parser = argparse.ArgumentParser(
+        description="Obtain the text corpus used for activation extraction."
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Overwrite existing corpus files.",
+    )
+    parser.add_argument(
+        "--rebuild", action="store_true",
+        help="Re-download all 17 source datasets and rebuild corpus from scratch "
+             "instead of pulling the prebuilt corpus from HuggingFace.",
+    )
+    args = parser.parse_args()
+
+    os.makedirs(config.DATA_DIR, exist_ok=True)
+    corpus_path = os.path.join(config.DATA_DIR, "corpus.jsonl")
+    labels_path = os.path.join(config.DATA_DIR, "corpus_labels.jsonl")
+
+    if (os.path.exists(corpus_path) or os.path.exists(labels_path)) and not args.force:
+        print("Corpus files already exist. Use --force to overwrite.")
+        log_run("a1_download_data.py", start_time, "skipped")
+        return 0
+
+    if args.rebuild:
+        print("Rebuilding corpus from source datasets ...")
+        n = _rebuild_corpus(corpus_path, labels_path)
+    else:
+        n = _download_from_hub(corpus_path, labels_path)
+
+    print(f"Corpus ready: {n:,} passages  ->  {corpus_path}")
+    log_run("a1_download_data.py", start_time, "success")
     return 0
 
 
@@ -141,5 +204,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as e:
-        log_run("step1_download_data.py", time.time(), "error", str(e))
+        log_run("a1_download_data.py", time.time(), "error", str(e))
         raise
